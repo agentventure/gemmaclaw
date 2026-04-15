@@ -43,15 +43,20 @@ class ModelDownloader(private val client: OkHttpClient) {
                 targetFile.parentFile?.mkdirs()
                 
                 FileOutputStream(targetFile).use { output ->
-                    val buffer = ByteArray(8 * 1024)
+                    val buffer = ByteArray(64 * 1024)
                     var bytesRead: Int
                     var totalRead = 0L
+                    var lastEmittedProgress = -1f
                     
                     val inputStream = body.byteStream()
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         output.write(buffer, 0, bytesRead)
                         totalRead += bytesRead
-                        emit(DownloadState.Progress(totalRead.toFloat() / totalBytes))
+                        val progress = totalRead.toFloat() / totalBytes
+                        if (progress - lastEmittedProgress >= 0.01f || progress >= 1f) {
+                            emit(DownloadState.Progress(progress))
+                            lastEmittedProgress = progress
+                        }
                     }
                 }
                 emit(DownloadState.Success(targetFile))

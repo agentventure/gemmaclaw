@@ -51,14 +51,17 @@ fun MainScreen(downloader: ModelDownloader, manager: GemmaManager) {
     var currentScreen by remember { mutableStateOf("selector") }
     val context = LocalContext.current
     val modelsDir = remember { File(context.filesDir, "models") }
+    val scope = rememberCoroutineScope()
 
     if (currentScreen == "selector") {
         ModelSelectorScreen(
             downloader = downloader,
             modelsDir = modelsDir,
             onModelReady = { modelFile ->
-                manager.initialize(modelFile)
-                currentScreen = "chat"
+                scope.launch {
+                    manager.initialize(modelFile)
+                    currentScreen = "chat"
+                }
             }
         )
     } else {
@@ -189,6 +192,9 @@ fun ChatScreen(manager: GemmaManager) {
                         val lastIndex = chatMessages.size - 1
                         
                         manager.generateResponse(userText).collect { chunk ->
+                            // Mediapipe LlmInference returns the WHOLE response so far, 
+                            // not just the new chunk, in some versions/configurations.
+                            // But usually it's chunks. Let's check the logs.
                             responseBuilder.append(chunk)
                             chatMessages[lastIndex] = ChatMessage(responseBuilder.toString(), false)
                         }
