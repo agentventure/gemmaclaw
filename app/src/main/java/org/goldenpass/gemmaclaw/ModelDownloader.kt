@@ -10,8 +10,16 @@ import java.io.File
 import java.io.FileOutputStream
 
 enum class GemmaModel(val modelName: String, val url: String, val sizeBytes: Long) {
-    E2B_IT("Gemma 4 E2B-IT", "http://10.0.2.2:8000/gemma-4-e2b.litertlm", 3_654_467_584L),
-    E4B_IT("Gemma 4 E4B-IT", "http://10.0.2.2:8000/gemma-4-e4b.litertlm", 3_654_467_584L)
+    E2B_IT(
+        "Gemma 4 E2B-IT",
+        "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
+        3_654_467_584L
+    ),
+    E4B_IT(
+        "Gemma 4 E4B-IT",
+        "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
+        3_654_467_584L
+    )
 }
 
 sealed class DownloadState {
