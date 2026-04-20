@@ -22,24 +22,37 @@ class GemmaManager(private val context: Context) {
         try {
             val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelFile.absolutePath)
-                .setMaxTokens(2048)
+                .setMaxTokens(4096) // Increased for better multi-turn support
                 .build()
 
             engine = LlmInference.createFromOptions(context, options)
             android.util.Log.d("GemmaManager", "Model initialized successfully")
         } catch (e: Exception) {
             android.util.Log.e("GemmaManager", "Failed to initialize model", e)
+            throw e // Propagate error to UI
         }
     }
 
-    fun generateResponse(prompt: String): Flow<String> = callbackFlow {
-        // Gemma 4 specific dialogue format
-        val finalPrompt = if (isThinkingMode) {
-            "<|turn>user\n$prompt<turn|>\n<|turn>model\n<|channel>thought\n"
-        } else {
-            "<|turn>user\n$prompt<turn|>\n<|turn>model\n"
+    fun generateResponse(history: List<ChatMessage>): Flow<String> = callbackFlow {
+        // Gemma 4 specific dialogue format with multi-turn support
+        val promptBuilder = StringBuilder()
+        
+        // System instruction
+        promptBuilder.append("<|turn>system\nYou are a helpful and accurate AI assistant. Answer concisely.<turn|>\n")
+
+        // Map history to Gemma 4 turn format
+        for (message in history) {
+            val role = if (message.isUser) "user" else "model"
+            promptBuilder.append("<|turn>$role\n${message.text}<turn|>\n")
         }
 
+        // Trigger the next model response
+        promptBuilder.append("<|turn>model\n")
+        if (isThinkingMode) {
+            promptBuilder.append("<|channel>thought\n")
+        }
+
+        val finalPrompt = promptBuilder.toString()
         android.util.Log.d("GemmaManager", "Starting inference with prompt:\n$finalPrompt")
 
         val fullResponseAccumulator = StringBuilder()
