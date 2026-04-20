@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.launch
 import java.io.File
 
 class GemmaManager(private val context: Context) {
@@ -23,7 +22,7 @@ class GemmaManager(private val context: Context) {
         try {
             val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelFile.absolutePath)
-                .setMaxTokens(1024)
+                .setMaxTokens(2048)
                 .build()
 
             engine = LlmInference.createFromOptions(context, options)
@@ -34,39 +33,94 @@ class GemmaManager(private val context: Context) {
     }
 
     fun generateResponse(prompt: String): Flow<String> = callbackFlow {
-        // Standard Gemma turn templates
+        // Gemma 4 specific dialogue format
         val finalPrompt = if (isThinkingMode) {
-            "<start_of_turn>user\n$prompt<end_of_turn>\n<start_of_turn>model\n<|think|>\n"
+            "<|turn>user\n$prompt<turn|>\n<|turn>model\n<|channel>thought\n"
         } else {
-            "<start_of_turn>user\n$prompt<end_of_turn>\n<start_of_turn>model\n"
+            "<|turn>user\n$prompt<turn|>\n<|turn>model\n"
         }
 
-        android.util.Log.d("GemmaManager", "Starting inference for prompt: $finalPrompt")
+        android.util.Log.d("GemmaManager", "Starting inference with prompt:\n$finalPrompt")
 
+        val fullResponseAccumulator = StringBuilder()
         val inference = engine
         if (inference == null) {
-            android.util.Log.e("GemmaManager", "Engine is null!")
-            close()
+            trySend("Error: Model not initialized")
+            channel.close()
             return@callbackFlow
         }
 
         try {
-            // Ensure the initiation of inference is explicitly off the main thread
-            // although callbackFlow + flowOn(Dispatchers.IO) should handle this.
             inference.generateResponseAsync(finalPrompt) { result, done ->
-                trySend(result)
-                if (done) {
+                // MediaPipe behavior varies: handle both cumulative and incremental results.
+                val currentTextSoFar = fullResponseAccumulator.toString()
+                
+                if (result.startsWith(currentTextSoFar) && currentTextSoFar.isNotEmpty()) {
+                    // Cumulative result: replace with the new full string
+                    fullResponseAccumulator.setLength(0)
+                    fullResponseAccumulator.append(result)
+                } else {
+                    // Incremental result: append the new chunk
+                    fullResponseAccumulator.append(result)
+                }
+
+                var processingText = fullResponseAccumulator.toString()
+                var shouldStop = false
+
+                // 1. Intercept Stop Tokens (including literal hallucinations)
+                val stopTokens = listOf(
+                    "<turn|>", 
+                    "<end_of_turn>", 
+                    "<|im_end|>", 
+                    "user\n", 
+                    "model\n",
+                    "end of turn"
+                )
+                
+                for (token in stopTokens) {
+                    val index = processingText.indexOf(token)
+                    if (index != -1) {
+                        processingText = processingText.substring(0, index)
+                        shouldStop = true
+                    }
+                }
+
+                // 2. Hide Thinking Channel
+                val thoughtStart = "<|channel>thought"
+                val thoughtEnd = "<channel|>"
+                val thoughtEndIdx = processingText.indexOf(thoughtEnd)
+                
+                val displayResult = if (thoughtEndIdx != -1) {
+                    // Extract text after the thought block
+                    processingText.substring(thoughtEndIdx + thoughtEnd.length)
+                } else if (processingText.contains(thoughtStart)) {
+                    // Hide thoughts while in progress
+                    "Thinking..."
+                } else {
+                    processingText
+                }
+
+                // 3. Final sanitization
+                val cleanedResult = displayResult
+                    .replace("<|turn>model", "")
+                    .replace("<|turn>user", "")
+                    .trim()
+
+                if (cleanedResult.isNotEmpty() || done) {
+                    trySend(cleanedResult)
+                }
+
+                if (done || shouldStop) {
                     channel.close()
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("GemmaManager", "Error during generateResponseAsync", e)
-            close()
+            android.util.Log.e("GemmaManager", "Error in inference", e)
+            trySend("Error: ${e.message}")
+            channel.close()
         }
 
-        awaitClose {
-            android.util.Log.d("GemmaManager", "Flow closed")
-        }
+        awaitClose { }
     }.flowOn(Dispatchers.IO)
 
     fun close() {

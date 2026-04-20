@@ -162,13 +162,19 @@ fun ChatScreen(manager: GemmaManager) {
     var isThinking by remember { mutableStateOf(manager.isThinkingMode) }
     val scope = rememberCoroutineScope()
 
+    var isGenerating by remember { mutableStateOf(false) }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).statusBarsPadding().navigationBarsPadding()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Thinking Mode", modifier = Modifier.weight(1f))
-            Switch(checked = isThinking, onCheckedChange = {
-                isThinking = it
-                manager.isThinkingMode = it
-            })
+            Switch(
+                checked = isThinking,
+                onCheckedChange = {
+                    isThinking = it
+                    manager.isThinkingMode = it
+                },
+                enabled = !isGenerating
+            )
         }
 
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -191,30 +197,38 @@ fun ChatScreen(manager: GemmaManager) {
                 value = inputText,
                 onValueChange = { inputText = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Ask Gemma...") }
+                placeholder = { Text("Ask Gemma...") },
+                enabled = !isGenerating
             )
-            IconButton(onClick = {
-                if (inputText.isNotBlank()) {
+            IconButton(
+                enabled = !isGenerating && inputText.isNotBlank(),
+                onClick = {
                     val userText = inputText
                     chatMessages.add(ChatMessage(userText, true))
                     inputText = ""
+                    isGenerating = true
                     
                     scope.launch {
-                        val responseBuilder = StringBuilder()
-                        chatMessages.add(ChatMessage("", false))
+                        chatMessages.add(ChatMessage("...", false))
                         val lastIndex = chatMessages.size - 1
                         
-                        manager.generateResponse(userText).collect { chunk ->
-                            // Mediapipe LlmInference returns the WHOLE response so far, 
-                            // not just the new chunk, in some versions/configurations.
-                            // But usually it's chunks. Let's check the logs.
-                            responseBuilder.append(chunk)
-                            chatMessages[lastIndex] = ChatMessage(responseBuilder.toString(), false)
+                        try {
+                            manager.generateResponse(userText).collect { fullResponse ->
+                                if (fullResponse.isNotEmpty()) {
+                                    chatMessages[lastIndex] = ChatMessage(fullResponse, false)
+                                }
+                            }
+                        } finally {
+                            isGenerating = false
                         }
                     }
                 }
-            }) {
-                Text("Send")
+            ) {
+                if (isGenerating) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Send")
+                }
             }
         }
     }
