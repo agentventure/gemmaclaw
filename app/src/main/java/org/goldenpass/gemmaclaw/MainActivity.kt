@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -161,12 +162,20 @@ fun ChatScreen(manager: GemmaManager) {
     val chatMessages = remember { mutableStateListOf<ChatMessage>() }
     var isThinking by remember { mutableStateOf(manager.isThinkingMode) }
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
     var isGenerating by remember { mutableStateOf(false) }
 
+    // Auto-scroll to bottom when messages arrive
+    LaunchedEffect(chatMessages.size) {
+        if (chatMessages.isNotEmpty()) {
+            listState.animateScrollToItem(chatMessages.size - 1)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).statusBarsPadding().navigationBarsPadding()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Thinking Mode", modifier = Modifier.weight(1f))
+            Text("Thinking Mode", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
             Switch(
                 checked = isThinking,
                 onCheckedChange = {
@@ -175,9 +184,16 @@ fun ChatScreen(manager: GemmaManager) {
                 },
                 enabled = !isGenerating
             )
+            Spacer(modifier = Modifier.width(8.dp))
+            TextButton(onClick = { chatMessages.clear() }, enabled = !isGenerating) {
+                Text("Clear")
+            }
         }
 
-        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f).fillMaxWidth()
+        ) {
             items(chatMessages) { message ->
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Card(
@@ -208,12 +224,15 @@ fun ChatScreen(manager: GemmaManager) {
                     inputText = ""
                     isGenerating = true
                     
+                    // Capture history before adding the placeholder
+                    val history = chatMessages.toList()
+                    
                     scope.launch {
                         chatMessages.add(ChatMessage("...", false))
                         val lastIndex = chatMessages.size - 1
                         
                         try {
-                            manager.generateResponse(userText).collect { fullResponse ->
+                            manager.generateResponse(history).collect { fullResponse ->
                                 if (fullResponse.isNotEmpty()) {
                                     chatMessages[lastIndex] = ChatMessage(fullResponse, false)
                                 }
