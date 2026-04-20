@@ -1,5 +1,7 @@
 package org.goldenpass.gemmaclaw
 
+import android.content.Context
+import android.os.PowerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -29,7 +31,7 @@ sealed class DownloadState {
     data class Error(val message: String) : DownloadState()
 }
 
-class ModelDownloader(private val client: OkHttpClient) {
+class ModelDownloader(private val context: Context, private val client: OkHttpClient) {
 
     fun downloadModel(model: GemmaModel, targetFile: File): Flow<DownloadState> = flow {
         if (targetFile.exists() && targetFile.length() == model.sizeBytes) {
@@ -37,8 +39,12 @@ class ModelDownloader(private val client: OkHttpClient) {
             return@flow
         }
 
-        val request = Request.Builder().url(model.url).build()
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GemmaClaw:DownloadWakeLock")
+        
         try {
+            wakeLock.acquire(10 * 60 * 1000L /*10 minutes max*/)
+            val request = Request.Builder().url(model.url).build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     emit(DownloadState.Error("Failed to download: ${response.code}"))
@@ -71,6 +77,10 @@ class ModelDownloader(private val client: OkHttpClient) {
             }
         } catch (e: Exception) {
             emit(DownloadState.Error(e.message ?: "Unknown error"))
+        } finally {
+            if (wakeLock.isHeld) {
+                wakeLock.release()
+            }
         }
     }.flowOn(Dispatchers.IO)
 }

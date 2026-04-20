@@ -1,6 +1,7 @@
 package org.goldenpass.gemmaclaw
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -29,7 +30,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        modelDownloader = ModelDownloader(client)
+        modelDownloader = ModelDownloader(this, client)
         gemmaManager = GemmaManager(this)
 
         enableEdgeToEdge()
@@ -78,6 +79,18 @@ fun ModelSelectorScreen(
     var selectedModel by remember { mutableStateOf(GemmaModel.E2B_IT) }
     var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // Keep screen on during active download
+    if (downloadState is DownloadState.Progress) {
+        DisposableEffect(Unit) {
+            val window = (context as? android.app.Activity)?.window
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            onDispose {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
