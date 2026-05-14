@@ -82,6 +82,11 @@ fun ModelSelectorScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    val isAlreadyDownloaded = remember(selectedModel) {
+        val targetFile = File(modelsDir, "${selectedModel.name.lowercase()}.litertlm")
+        targetFile.exists() && targetFile.length() == selectedModel.sizeBytes
+    }
+
     // Keep screen on during active download
     if (downloadState is DownloadState.Progress) {
         DisposableEffect(Unit) {
@@ -134,7 +139,7 @@ fun ModelSelectorScreen(
                         }
                     }
                 }) {
-                    Text("Download & Start")
+                    Text(if (isAlreadyDownloaded) "Start Model" else "Download & Start")
                 }
             }
             is DownloadState.Progress -> {
